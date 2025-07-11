@@ -34,7 +34,7 @@
                         </thead>
                         <tbody class="text-gray-700">
                             @foreach($schedules as $schedule)
-                            <tr class="border-b">
+                                <tr class="border-b">
                                 <td class="py-3 px-4">{{ $schedule->field->name }}</td>
                                 <td class="py-3 px-4">{{ $schedule->day }}</td> <!-- Menampilkan hari -->
                                 <td class="py-3 px-4">
@@ -80,10 +80,14 @@
                                         </button>
                                     </form>
                                 </td>
-                            </tr>
+                                </tr>
                             @endforeach
                         </tbody>
                     </table>
+                </div>
+                {{-- Pagination --}}
+                <div class="mt-4 flex justify-center">
+                    {{ $schedules->links() }}
                 </div>
             </div>
         </div>

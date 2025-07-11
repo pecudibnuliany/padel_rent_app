@@ -15,8 +15,19 @@ class PaymentController extends Controller
      */
     public function index()
     {
-        // Mengambil semua pembayaran yang terkait dengan user yang login (jika admin, semua pembayaran)
-        $payments = Auth::user()->role === 'admin' ? Payment::all() : Payment::where('booking_id', Auth::id())->get();
+        // Gunakan eager loading dan pagination
+        if (Auth::user()->role === 'admin') {
+            $payments = Payment::with(['booking.user', 'booking.field'])
+            ->orderBy('booking_id')
+            ->paginate(10);
+        } else {
+            $payments = Payment::with(['booking.user', 'booking.field'])
+                ->whereHas('booking', function ($q) {
+                    $q->where('user_id', Auth::id());
+                })
+                ->orderBy('booking_id')
+                ->paginate(10);
+        }
 
         return view('admin.payments.index', compact('payments'));
     }
@@ -26,9 +37,7 @@ class PaymentController extends Controller
      */
     public function create($bookingId)
     {
-        $booking = Booking::findOrFail($bookingId);
-
-        // Harga per jam sudah tetap, langsung ambil harga per jam dari field terkait
+        $booking = Booking::with('field')->findOrFail($bookingId);
         $totalPrice = $booking->field->price_per_hour;
 
         return view('admin.payments.create', compact('booking', 'totalPrice'));
@@ -39,49 +48,39 @@ class PaymentController extends Controller
      */
     public function store(Request $request, $bookingId)
     {
-        // Validasi input
         $request->validate([
             'payment_method' => 'required|in:cash,transfer',
-            'payment_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048', // Validasi file bukti pembayaran
+            'payment_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
 
-        // Mengambil data booking terkait
-        $booking = Booking::findOrFail($bookingId);
-
-        // Mengambil harga tetap dari field terkait
+        $booking = Booking::with('field')->findOrFail($bookingId);
         $totalPrice = $booking->field->price_per_hour;
 
-        // Menyimpan bukti pembayaran jika ada
         $paymentProofPath = null;
         if ($request->hasFile('payment_proof')) {
             $paymentProofPath = $request->file('payment_proof')->store('payment_proofs', 'public');
         }
 
-        // Membuat pembayaran baru dengan status 'pending'
-        $payment = Payment::create([
+        Payment::create([
             'booking_id' => $booking->id,
             'amount' => $totalPrice,
-            'status' => 'checked', // Status awal adalah pending
+            'status' => 'checked',
             'payment_method' => $request->payment_method,
             'payment_proof' => $paymentProofPath,
         ]);
 
-        // Update status booking menjadi pending atau sesuai kebutuhan
         $booking->update(['status' => 'pending']);
 
-        if (Auth::user()->role === 'admin') {
-            return redirect()->route('admin.payments.index')->with('success', 'Pembayaran berhasil dibuat!');
-        } else {
-            return redirect()->route('user.administration.index')->with('success', 'Pembayaran berhasil dibuat!');
-        }
+        $route = Auth::user()->role === 'admin' ? 'admin.payments.index' : 'user.administration.index';
+        return redirect()->route($route)->with('success', 'Pembayaran berhasil dibuat!');
     }
-
 
     /**
      * Menampilkan detail pembayaran
      */
     public function show(Payment $payment)
     {
+        $payment->load(['booking.user', 'booking.field']);
         return view('admin.payments.show', compact('payment'));
     }
 
@@ -90,11 +89,8 @@ class PaymentController extends Controller
      */
     public function edit(Payment $payment)
     {
-        // Pastikan hanya admin atau pemilik booking yang dapat mengedit pembayaran
-        if (Auth::user()->role !== 'admin' && Auth::id() !== $payment->booking->user_id) {
-            return redirect()->route('admin.payments.index')->with('error', 'Anda tidak memiliki izin untuk mengedit pembayaran ini.');
-        }
-
+        $this->authorizePayment($payment);
+        $payment->load(['booking.user', 'booking.field']);
         return view('admin.payments.edit', compact('payment'));
     }
 
@@ -103,29 +99,21 @@ class PaymentController extends Controller
      */
     public function update(Request $request, Payment $payment)
     {
-        // Pastikan hanya admin yang dapat mengupdate status pembayaran
         if (Auth::user()->role !== 'admin') {
             return redirect()->route('admin.payments.index')->with('error', 'Anda tidak memiliki izin untuk memperbarui status pembayaran.');
         }
 
-        // Validasi status pembayaran
         $request->validate([
             'status' => 'required|in:pending,paid,failed,checked',
         ]);
 
-        // Update status pembayaran
-        $payment->update([
-            'status' => $request->status,
-        ]);
+        $payment->update(['status' => $request->status]);
 
-        // Ambil booking terkait
         $booking = $payment->booking;
-
-        // Update status booking berdasarkan status pembayaran
         if ($request->status === 'paid') {
-            $booking->update(['status' => 'confirmed']); // Jika pembayaran berhasil, status booking menjadi 'confirmed'
+            $booking->update(['status' => 'confirmed']);
         } elseif ($request->status === 'failed') {
-            $booking->update(['status' => 'canceled']); // Jika pembayaran gagal, status booking menjadi 'failed'
+            $booking->update(['status' => 'canceled']);
         }
 
         return redirect()->route('admin.payments.index')->with('success', 'Status pembayaran berhasil diperbarui!');
@@ -136,20 +124,24 @@ class PaymentController extends Controller
      */
     public function destroy(Payment $payment)
     {
-        // Pastikan hanya admin atau pemilik booking yang dapat menghapus pembayaran
-        if (Auth::user()->role !== 'admin' && Auth::id() !== $payment->booking->user_id) {
-            return redirect()->route('admin.payments.index')->with('error', 'Anda tidak memiliki izin untuk menghapus pembayaran ini.');
-        }
+        $this->authorizePayment($payment);
 
-        // Hapus bukti pembayaran dari storage jika ada
         if ($payment->payment_proof) {
             Storage::disk('public')->delete($payment->payment_proof);
         }
 
-        // Hapus pembayaran
         $payment->delete();
 
         return redirect()->route('admin.payments.index')->with('success', 'Pembayaran berhasil dihapus!');
     }
 
+    /**
+     * Helper: Otorisasi akses pembayaran
+     */
+    protected function authorizePayment(Payment $payment)
+    {
+        if (Auth::user()->role !== 'admin' && Auth::id() !== $payment->booking->user_id) {
+            abort(403, 'Anda tidak memiliki izin untuk mengakses pembayaran ini.');
+        }
+    }
 }

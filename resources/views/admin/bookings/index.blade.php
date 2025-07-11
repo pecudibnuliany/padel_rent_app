@@ -94,6 +94,10 @@
                         </tbody>
                     </table>
                 </div>
+                {{-- Pagination --}}
+                <div class="mt-4 flex justify-center">
+                    {{ $bookings->links() }}
+                </div>
             </div>
         </div>
     </div>

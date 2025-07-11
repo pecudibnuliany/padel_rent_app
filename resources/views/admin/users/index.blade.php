@@ -52,6 +52,10 @@
                     </tbody>
                 </table>
             </div>
+            {{-- Pagination --}}
+            <div class="mt-4 flex justify-center">
+                {{ $users->links() }}
+            </div>
         </div>
     </div>
 @endsection

@@ -76,6 +76,10 @@
                         </tbody>
                     </table>
                 </div>
+                {{-- Pagination --}}
+                <div class="mt-4 flex justify-center">
+                    {{ $payments->links() }}
+                </div>
             </div>
         </div>
     </div>
