@@ -32,14 +32,14 @@ class FieldSeeder extends Seeder
             [
                 'name' => 'admin',
                 'email' => 'admin@mail.com',
-                'email_verified_at' => '',
+                'email_verified_at' => null,
                 'password' => Hash::make('admin12345'), // Atur ke null jika kolom dapat NULL
                 'role'=>'admin',
             ],
             [
                 'name' => 'user',
                 'email' => 'user@mail.com',
-                'email_verified_at' => '',
+                'email_verified_at' => null,
                 'password' => Hash::make('user12345'), // Atur ke null jika kolom dapat NULL
                 'role'=>'user',
             ]
